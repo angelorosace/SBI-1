@@ -18,7 +18,7 @@ Nucleosome (3KUY)
 
 2. Comparar noms (o seqüències) per veure quins parells d'interaccions tenim
 
-3. Superposició pdbs -> 
+3. Superposició pdbs
 
 4. Comprobar quantes interaccions queden disponibles al iniciar cada iteració
 
