@@ -1,6 +1,4 @@
-################
-##SBI: matchprot
-################
+#Matchprot
 
 1. Carregar pdbs utilitzant BioPython(INPUT):
 1.1 Globina
