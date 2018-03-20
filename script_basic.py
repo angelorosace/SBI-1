@@ -6,6 +6,30 @@ import os
 
 io = PDBIO()
 
+#Counter of chains
+global counter
+counter = 0
+
+def comparechains(chain1,chain2):
+	"""
+	Compares 2 sequences from 2 chain-objects and return true if they are equal (>95% matches)
+	"""
+
+	#Store AA sequence into lists
+	listres1 = [ res.get_resname() for res in chain1.get_residues() ]
+	listres2 = [ res.get_resname() for res in chain2.get_residues() ]
+
+
+	#Compare if both lists are equal and store the number of matches and mismatches
+	comparlist = [ res1 == res2 for res1,res2 in zip(listres1,listres2)]
+	match_vs_mismatch = ((comparlist.count(True),comparlist.count(False)))
+
+	#If there are more than 95% of matches
+	if match_vs_mismatch[0]/len(comparlist) > 0.95:
+		return True
+	else:
+		return False
+
 def savepdb (pdb_ob,filename):
 	"""
 	Save an object in pdb format
@@ -39,8 +63,8 @@ def clashtest(chain1, chain2):
 	#If any atom clashes, calculate the overall percentage of clashing atoms in chain1
 	#//El missatge d'error el deixo de moment com a demostracio. A la versio definitiva no hi hauria de ser
 	clashpercent  = clashcounter/numatoms1 * 100
-	if clashcounter > 0:
-		stderr.write("%i per cent atoms in chain %s are clashing with chain %s\n" %(clashpercent, chain1.get_id(), chain2.get_id()))
+	#//if clashcounter > 0:
+	#//	stderr.write("%i per cent atoms in chain %s are clashing with chain %s\n" %(clashpercent, chain1.get_id(), chain2.get_id()))
 
 	#Return percentage of clashing atoms
 	return clashpercent
@@ -132,15 +156,23 @@ Dictionary, list and other variables index:
 		keys: input pdb filenames
 		values: Structure pdb object from file
 
-	2. Subunits: all chain names introduced
-	3. Chainsbyfile: 
+	2. chains_ids: all chain names introduced
+	3. modelchains: object chains of all chains introduced as input
+	4. Chainsbyfile: 
 		keys: input pdb filenames
 		values: list of chain-objects in pdb file
-	4. Interactions: 
+	5. sameseqs: 
+		keys: all chains
+		values: nested dictionary
+			keys: chains which sequence is equal to the first key's sequence (same with different name)
+			values: pdb files names where this second, same-sequence chain is found 
+	5. Interactions: 
 		key: chain name
-		value: list of chain names wich interacts with
-	5. counter: counts the number of chains moved for bulding the present model
-	6. Chainsmoved: dictionary with
+		value: dictionary
+			key: chains which key interact with
+			value: pdbfile where this interaction is found
+	6. counter: counts the number of chains moved for bulding the present model
+	7. Chainsmoved: dictionary with
 		keys: all chains in the present model
 		values: chain_objects moved of the corresponding chain type
 """
@@ -148,26 +180,56 @@ Dictionary, list and other variables index:
 # Create a PDBparser object
 parser = PDBParser(PERMISSIVE = 1)
 
-#declare some variables
-
 #Create allpdb dictionary
 allpdb = { filename : parser.get_structure(filename, filename) for filename in argv if argv.index(filename) != 0}
 
-#Create subunits set and chainsbyfile dictionary
-subunits = set()
+#Create chains, chains_ids set and chainsbyfile dictionary
+chains_ids = set()
+modelchains = set()
 chainsbyfile = {}
 for pdb in allpdb:
-	chainsbyfile[pdb] = list()
+	chainsbyfile[pdb] = set()
 	for subunit in allpdb[pdb].get_chains():
-		chainsbyfile[pdb].append(subunit)
-		subunits.add(subunit.get_id())
+		chains_ids.add(subunit.get_id())
+		modelchains.add(subunit)
+		chainsbyfile[pdb].add(subunit)
+
+########################Proves########################
+#//Per si una mateixa cadena rep diferents noms en diferents pdbs. Se que vam dir que no ho fariem, pero te una explicacio
+
+#Create sameseqs dictionary
+sameseqs = dict()
+for pdbfile in chainsbyfile:
+
+	for testingchain in chainsbyfile[pdbfile]:		
+		testingchainid = testingchain.get_id()
+
+		for chain in modelchains:
+			chainid = chain.get_id()
+			#Avoid comparing chain with itself
+			if testingchainid == chainid:
+				continue
+
+			#if testingchain and chain are actually the same, annote it in sameseqs dictionary 
+			if comparechains(chain, testingchain):
+
+				#Create entry if it didn't existed previously
+				if chainid not in sameseqs.keys():
+					sameseqs[chainid] = dict()
+
+				sameseqs[chainid][testingchainid] = pdbfile
+
+
+######################################################
+
+
 
 #Create intersections dictionary
 interactions = {}
 intdict = dict()
 
 #Iterate over every subunit in the model
-for element in subunits:
+for element in chains_ids:
 
 	#ITerate over every file in input
 	for filename in allpdb:
@@ -177,7 +239,7 @@ for element in subunits:
 		if element in chainames:
 			index = chainames.index(element)
 
-			#Iterate over subunits in pdbfile
+			#Iterate over chains_ids in pdbfile
 			for intchain in chainames:
 
 				#Skip key chain
@@ -193,18 +255,15 @@ for element in subunits:
 	interactions[element] = intdict
 	intdict = dict()
 
-#Counter of chains
-global counter
-counter = 0
-
 #Create chainsmoved dictionary
-chainsmoved = { chain: [] for chain in subunits }
+chainsmoved = { chain: [] for chain in chains_ids }
 
 print("allpdb: ",allpdb)
-print("subunits: ",subunits)
+print("chains_ids: ",chains_ids)
 print("chainsbyfile: ",chainsbyfile)
 print("interactions: ",interactions)
 print("chainsmoved: ",chainsmoved)
+print("sameseqs: ",sameseqs)
 
 #####################################
 ##Initialize algorithm of matchmaking
