@@ -3,6 +3,7 @@
 from Bio.PDB import *
 from sys import *
 import os
+import copy
 
 io = PDBIO()
 
@@ -10,25 +11,34 @@ io = PDBIO()
 global counter
 counter = 0
 
+def get_chain_coords(chain):
+	"""
+	Obtains atom coordenates list from a chain object
+	"""
+	return [ atom.get_coord() for atom in chain.get_atoms() ]
+
+def get_seq(chain):
+	"""
+	Obtains sequence (list of AA identifiers) from a chain object
+	"""
+	return [ res.get_resname() for res in chain.get_residues() ]
+
+
 def comparechains(chain1,chain2):
 	"""
 	Compares 2 sequences from 2 chain-objects and return true if they are equal (>95% matches)
 	"""
 
 	#Store AA sequence into lists
-	listres1 = [ res.get_resname() for res in chain1.get_residues() ]
-	listres2 = [ res.get_resname() for res in chain2.get_residues() ]
-
+	listres1 = get_seq(chain1)
+	listres2 = get_seq(chain2)
 
 	#Compare if both lists are equal and store the number of matches and mismatches
 	comparlist = [ res1 == res2 for res1,res2 in zip(listres1,listres2)]
 	match_vs_mismatch = ((comparlist.count(True),comparlist.count(False)))
 
-	#If there are more than 95% of matches
-	if match_vs_mismatch[0]/len(comparlist) > 0.95:
-		return True
-	else:
-		return False
+	#If there are more than 95% of matches, return true
+	return (match_vs_mismatch[0]/len(comparlist) > 0.95)
 
 def savepdb (pdb_ob,filename):
 	"""
@@ -37,34 +47,33 @@ def savepdb (pdb_ob,filename):
 	io.set_structure(pdb_ob)
 	io.save(filename)
 
-def clashtest(chain1, chain2):
+def clashtest(chain1, coordsatom2):
 	"""
-	Returns True if any of the atoms on chain1 clash with any of the atoms in chain2
+	Returns True if any of the atoms on chain1 clash with any of the atom coordenates in chain2
 	"""
 	clashcounter = 0
 
-	#Obtain a list of atoms for chain1 and a list of coordinates for chain 2
+	#Obtain a list of atom objects for chain1
 	atom1 = [ atom for atom in chain1.get_atoms() ]
-	cordsatom2 = [ atom.get_coord() for atom in chain2.get_atoms() ]
 
 	#Obtain number of atoms in both chains
 	numatoms1 = len(atom1)
-	numatoms2 = len(cordsatom2)
+	numatoms2 = len(coordsatom2)
 
 	#Prepare list of atoms for neighbour search
 	ns = NeighborSearch(atom1)
 
-	#Check collisions of every atom in chain2 to already-prepared-list of atoms1 (collision distance: 1 amstrong)
-	for clashes in map(lambda x: ns.search(x,2.0), cordsatom2):
+	#Check collisions of every atom coordenates in coordsatom2 to already-prepared-list of atoms1 (collision distance: 4 amstrong)
+	for clashes in map(lambda x: ns.search(x,4.0), coordsatom2):
 		#Count number of atoms clashing
 		if len(clashes)> 0:
 			clashcounter += 1
 
-	#If any atom clashes, calculate the overall percentage of clashing atoms in chain1
+	#If any atom clashes, calculate the overall percentage of clashing atoms in chain
 	#//El missatge d'error el deixo de moment com a demostracio. A la versio definitiva no hi hauria de ser
 	clashpercent  = clashcounter/numatoms1 * 100
-	#//if clashcounter > 0:
-	#//	stderr.write("%i per cent atoms in chain %s are clashing with chain %s\n" %(clashpercent, chain1.get_id(), chain2.get_id()))
+	if clashcounter > 0:
+		stderr.write("%i per cent atoms in chain %s are clashing\n" %(clashpercent, chain1.get_id()))
 
 	#Return percentage of clashing atoms
 	return clashpercent
@@ -75,12 +84,14 @@ def superimpose(fix_chain,mov_chain,apply_chain):
 	"""
 	sup = Superimposer()
 
-	#//Obtenir una llista d'atoms-objects per a cada cadena
+	#Obtain atom-objects list by for fix and mov chain
 	fix_atoms = list(fix_chain.get_atoms())
 	mov_atoms = list(mov_chain.get_atoms())
-	#//Fer superimposicio
+
+	#Superimpose mov over fix
 	sup.set_atoms(fix_atoms	,mov_atoms)
 
+	#Apply superimposition movement to apply chain, and return it
 	sup.apply(apply_chain)
 	return apply_chain
 
@@ -88,62 +99,73 @@ def recursive(chain_ob, camefrom, interactions, allpdb):
 	"""
 	NOTA A MARTA: Aquesta subrutina, benvolguda Marta, potser ens solucioni gran part del treball o potser ens peti l'ordinador. L'important es que sortirem de dubtes
 	L'he comentat molt perque la puguis entendre facil i rapidament
-	ALERTA!!!!: si visualitzes els resultats a chimera es veuran malament la majoria dels cops, doncs aquest algoritme te tendencia a repetir subunitats. I si dues subunitats estan molt a prop, chimera les separa
 	"""
-	chainame = chain_ob.get_id()
-	#//Tancament de seguretat per evitar que se li vagi l'olla
-	if counter == 5:
-		exit()
-	#Iterate throught the chains which interact with the present chain
-	for chainteracting in interactions[chainame]:
 
-		#for every pdb where there's an interaction between chainteracting and chain_ob
-		for pdbinteracting in interactions[chainteracting][chainame]:
+	#//Tancament de seguretat
+	#if counter > 3:
+	#	exit()
 
-			#clash switch
-			clashed_chain = False
+	#Extract chain_ob numeral (real sequence identifier, for )
+	for originalchain in originalchains:
+		if comparechains(originalchain, chain_ob):
+			chain_ob_numeral = originalchains[originalchain]
 
+	#Iterate over all the synonimes avalible for that chain
+	for synonim in synonim_chains[chain_ob_numeral]:
+		chainame = synonim
+		#Iterate throught the chains which interact with the present chain
+		for chainteracting in interactions[chainame]:
 
-			#If this loop corresponds to the already superimposed pdb for this chain where the present chain_ob comes from, skip it
-			if pdbinteracting == camefrom:
-				continue
+			#for every pdb where there's an interaction between chainteracting and chain_ob
+			for pdbinteracting in interactions[chainame][chainteracting]:
 
-			#print("chain fixed: %s\nchain to move: %s" % (chain_ob,chainteracting))
-			#Extract the pdb where chain_ob and chainteracting are both toghether
-			pdbname = pdbinteracting
-			pdb_ob = allpdb[pdbname]
-			#chaintomove: chain of the same type than chain_ob in the pdb-file
-			chaintomove = pdb_ob[0][chainame]
-			#aplichain: chain that will be moved to interact with chain_ob
-			applychain = pdb_ob[0][chainteracting]
+				#clash switch
+				clashed_chain = False
 
+				#If this loop corresponds to the already superimposed pdb for this chain where the present chain_ob comes from, skip it
+				if pdbinteracting == camefrom:
+					continue
 
-			#Superimpose
-			appliedchain = superimpose(fix_chain = chain_ob, mov_chain = chaintomove, apply_chain = applychain)
+				#Extract the pdb where chain_ob and chainteracting are both toghether
+				pdbname = pdbinteracting
+				pdb_ob = allpdb[pdbname]
+				#chaintomove: chain of the same type than chain_ob in the pdb-file
+				chaintomove = pdb_ob[0][chainame]
+				#aplichain: chain that will be moved to interact with chain_ob
+				applychain = copy.deepcopy(pdb_ob[0][chainteracting])
 
-			#Check if appliedchain collides with any of the 
-			for chainmoved in chainsmoved[appliedchain.get_id()]:
-				clashperc = clashtest(appliedchain, chainmoved)
-				if clashperc > 80:
-					clashed_chain = True
+				#Superimpose
+				appliedchain = superimpose(fix_chain = chain_ob, mov_chain = chaintomove, apply_chain = applychain)
 
-			#Check if applied chain has clashed with any of the already-moved chains, and skip chain  and pdb if so
-			if clashed_chain == True:
-				continue
+				#Extract chain_applied numeral (real sequence identifier, for )
+				for originalchain in originalchains:
+					if comparechains(originalchain, applychain):
+						chain_applied_numeral = originalchains[originalchain]
 
-			#print("chain %s moved succesfully\n" % (appliedchain))
-			#Add applied chain to coresponding list of already-moved chains
-			chainsmoved[appliedchain.get_id()].append(appliedchain)
-			#Add one to the superimpositions counter
-			global counter
-			counter += 1
+				#Check if appliedchain collides with any of the already moved chains
+				for chainmoved in coordsmoved[chain_applied_numeral]:
+					clashperc = clashtest(appliedchain, chainmoved)
+					if clashperc > 80:
+						clashed_chain = True
+						break
 
-			#Save appliedchain (the moved one) in a new pdb
-			tempname = "temp" + str(counter) + ".pdb"
-			savepdb(appliedchain, tempname)
+				#Check if applied chain has clashed with any of the already-moved chains, and skip chain  and pdb if so
+				if clashed_chain == True:
+					continue
 
-			#Repeat process for appliedchain
-			recursive(appliedchain, pdbinteracting, interactions, allpdb)
+				#Add one to the superimpositions counter
+				global counter
+				counter += 1
+
+				#Save appliedchain (the moved one) in a new pdb
+				tempname = "temp" + str(counter) + ".pdb"
+				savepdb(appliedchain, tempname)
+
+				#Add applied chain to coresponding list of already-moved chains
+				coordsmoved[chain_applied_numeral].append(get_chain_coords(appliedchain))
+
+				#Repeat process for appliedchain
+				recursive(appliedchain, pdbinteracting, interactions, allpdb)
 
 
 ##########################################
@@ -152,29 +174,31 @@ def recursive(chain_ob, camefrom, interactions, allpdb):
 
 """
 Dictionary, list and other variables index:
+	6. counter: counts the number of chains moved for bulding the present model
 	1. Allpdb:
 		keys: input pdb filenames
 		values: Structure pdb object from file
 
 	2. chains_ids: all chain names introduced
-	3. modelchains: object chains of all chains introduced as input
+	3. modelchains: list. Contains lists of atom coordenates for every already saved chain
 	4. Chainsbyfile: 
 		keys: input pdb filenames
 		values: list of chain-objects in pdb file
-	5. sameseqs: 
-		keys: all chains
-		values: nested dictionary
-			keys: chains which sequence is equal to the first key's sequence (same with different name)
-			values: pdb files names where this second, same-sequence chain is found 
+	5. Original chains: dictionary
+		keys: all different chain objects from the model
+		values: "numeral" identifier. Every unique sequence in the model has a unique numeral identifier
+	5. synonim_chains: 
+		keys: all numerals
+			keys: chain identifiers with same numeral (same sequence)
+				values: pdb files names where this second chain is found 
 	5. Interactions: 
 		key: chain name
 		value: dictionary
 			key: chains which key interact with
 			value: pdbfile where this interaction is found
-	6. counter: counts the number of chains moved for bulding the present model
-	7. Chainsmoved: dictionary with
-		keys: all chains in the present model
-		values: chain_objects moved of the corresponding chain type
+	7. coordsmoved: dictionary with
+		keys: Numerals (unique sequence identifiers)
+		values: chain_objects moved of the corresponding sequence type
 """
 
 # Create a PDBparser object
@@ -194,44 +218,48 @@ for pdb in allpdb:
 		modelchains.add(subunit)
 		chainsbyfile[pdb].add(subunit)
 
-########################Proves########################
-#//Per si una mateixa cadena rep diferents noms en diferents pdbs. Se que vam dir que no ho fariem, pero te una explicacio
+##################################################
+##Create synonim_chains and originalseqs dictionary
+##################################################
 
-#Create sameseqs dictionary
-sameseqs = dict()
+originalchains = dict()
+synonim_chains = dict()
+countnumerals = 1
+
+#For pdb file
 for pdbfile in chainsbyfile:
 
-	for testingchain in chainsbyfile[pdbfile]:		
+	#For testingchain by pdbfile, extract its seq and id
+	for testingchain in chainsbyfile[pdbfile]:
+		testingseq = ''.join(get_seq(testingchain))
 		testingchainid = testingchain.get_id()
 
-		for chain in modelchains:
-			chainid = chain.get_id()
-			#Avoid comparing chain with itself
-			if testingchainid == chainid:
-				continue
+		#Compare with the original-chains dictionary, and classify the testingchainid with the corresponding numeral
+		for chain in originalchains:
+			if comparechains(testingchain,chain):
+				numeral = originalchains[chain]
+				synonim_chains[numeral][testingchainid] = pdbfile
+				break
 
-			#if testingchain and chain are actually the same, annote it in sameseqs dictionary 
-			if comparechains(chain, testingchain):
+		#If this sequence hasn't a numeral yet, create it
+		else:
+			numeral = str(countnumerals)+"th"
+			originalchains[testingchain] = numeral
+			synonim_chains[numeral] = dict()
+			synonim_chains[numeral][testingchainid] = pdbfile
+			countnumerals += 1
 
-				#Create entry if it didn't existed previously
-				if chainid not in sameseqs.keys():
-					sameseqs[chainid] = dict()
-
-				sameseqs[chainid][testingchainid] = pdbfile
-
-
-######################################################
-
-
-
+################################
 #Create intersections dictionary
+################################
+
 interactions = {}
 intdict = dict()
 
 #Iterate over every subunit in the model
 for element in chains_ids:
 
-	#ITerate over every file in input
+	#Iterate over every file in input
 	for filename in allpdb:
 		chainames = [ a.get_id() for a in chainsbyfile[filename] ]
 
@@ -255,15 +283,16 @@ for element in chains_ids:
 	interactions[element] = intdict
 	intdict = dict()
 
-#Create chainsmoved dictionary
-chainsmoved = { chain: [] for chain in chains_ids }
+#Create coordsmoved dictionary
+coordsmoved = { chain: [] for chain in synonim_chains }
 
-print("allpdb: ",allpdb)
-print("chains_ids: ",chains_ids)
-print("chainsbyfile: ",chainsbyfile)
-print("interactions: ",interactions)
-print("chainsmoved: ",chainsmoved)
-print("sameseqs: ",sameseqs)
+#print("allpdb: ",allpdb)
+#print("chains_ids: ",chains_ids)
+#print("chainsbyfile: ",chainsbyfile)
+#print("interactions: ",interactions)
+print("coordsmoved: ",coordsmoved)
+print("synonim_chains: ",synonim_chains)
+print("original chains: ",originalchains)
 
 #####################################
 ##Initialize algorithm of matchmaking
@@ -275,8 +304,13 @@ seed = list(allpdb.keys())[0]
 areclashes = False
 for chain in chainsbyfile[seed]:
 
+	#Extract chain_ob numeral (real sequence identifier, for )
+	for originalchain in originalchains:
+		if comparechains(originalchain, chain):
+			chain_numeral = originalchains[originalchain]
+
 	#Check collisions for seed chains
-	for chainmoved in chainsmoved[chain.get_id()]:
+	for chainmoved in coordsmoved[chain_numeral]:
 		clashperc = clashtest(chain, chainmoved)
 		if clashperc > 80:
 			areclashes = True 
@@ -284,7 +318,7 @@ for chain in chainsbyfile[seed]:
 	#save seed chains 
 	if not areclashes:
 		savepdb(chain, "temp" + str(counter) + ".pdb")
-		chainsmoved[chain.get_id()].append(chain)
+		coordsmoved[chain_numeral].append(get_chain_coords(chain))
 
 		recursive(chain, seed, interactions, allpdb)
 
