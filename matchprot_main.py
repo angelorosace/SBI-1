@@ -156,7 +156,7 @@ def recursive(chain_ob, camefrom_pdb):
 				#Skip if interacting chain has already been placed
 				if camefrom_pdb == pdbinteracting and chain_ob_id == synonim:
 					continue
-				
+
 				#clash switch
 				clashed_chain = False
 
@@ -214,15 +214,13 @@ def recursive(chain_ob, camefrom_pdb):
 					print("Chain %s succesfully assembled to the model. Stored on temp %i" % (chainteracting_id,counter))
 
 				#Check if limit of subunits has been reached, and end program if so (only when limitant chain option is not activated)
-				if (counter >= options.max_chains) and options.limitant_chain == "False":
+				if ( options.max_chains != -1) and (counter >= options.max_chains) and options.limitant_chain == "False":
 					if options.verbose:
 						print("maximum chains limit reached")
 					end_matchprot()
 
 				#Repeat process for appliedchain
 				recursive(chain_ob = applychain, camefrom_pdb = pdbinteracting)
-
-
 
 #########
 ##Options
@@ -265,7 +263,7 @@ parser.add_argument('-m', '--max_chains',
 	dest = "max_chains",
 	action = "store",
 	type = int,
-	default = 0, 
+	default = -1, 
 	help = "(integer) Maximum number of subunits for the final model")
 
 parser.add_argument('-l', '--limitant_chain',
