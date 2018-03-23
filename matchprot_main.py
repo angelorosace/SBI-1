@@ -1,15 +1,30 @@
 #!/usr/bin/python3
 
 from Bio.PDB import *
-from sys import *
+from shutil import rmtree
+from sys import exit
 import os
 import copy
+import argparse
 
 io = PDBIO()
 
 #Counter of chains
 global counter
 counter = 1
+
+def end_matchprot():
+	"""
+	Ends matchprot, but before it merges all temporary files into the final model and remove the temporary files
+	"""
+	#Merge temporary files into definitive result
+	os.system(str("cat " + str(options.path) + options.outfile + "_temp/temp*.pdb > " + str(options.path) + str(options.outfile) + ".pdb"))
+
+	#Delete temporary files (if not option temp is selected)
+	if not options.temp:
+		rmtree(str(options.path) + options.outfile + "_temp") 
+	exit()
+
 
 def get_chain_coords(chain):
 	"""
@@ -78,7 +93,7 @@ def clashtest(chain1, coordsatom2):
 	#Return percentage of clashing atoms
 	return clashpercent
 
-def superimpose(fix_chain,mov_chain):
+def superimpose(fix_chain,mov_chain,apply_chain):
 	"""
 	Superimpose peptide chain mov_chain on fix_chain with Biopython superimposer, and return superimposition matrices
 	"""
@@ -91,113 +106,213 @@ def superimpose(fix_chain,mov_chain):
 	#Superimpose mov over fix
 	sup.set_atoms(fix_atoms	,mov_atoms)
 
+	#Do changes in applycain
+	sup.apply(apply_chain)
+
 	#Return superimposition matrices
 	return sup
 
-def recursive(chain_ob, camefrom, interactions, allpdb):
+def recursive(chain_ob, camefrom_pdb, camefrom_chain):
 	"""
-	Main part of the script.
+	Main part of the script. 
+	Checks all avalible interactions for chain_ob sequence. For each interaction, selects a chaintomove (the one that has the samesequence as chain_ob in the interaction)
+	and superimposes it to chain_ob. The displacement matrices of this superimpositions are applied not to chaintomove, but to applychain (a deep copy ofthe chain that is
+	interacting with chain to move). Applychain is displaced to interact with chain_ob.
+	
+	If applychain doesn't clash with any of the already displaced chain, it's saved on a temporary pdb file. Also, the recursive subrutine is re-executed with applychain
+	as new chain_ob 
+	
+	If it clashes, is skipped and go to the next interacting chain of chain_ob
 	"""
 
-	#//Tancament de seguretat
-	#if counter > 3:
-	#	exit()
+	#Extract id of chain object
+	chain_ob_id = chain_ob.get_id()
 
 	#Extract chain_ob ordinal (real sequence identifier, for )
-	chain_ob_ordinal = idchainordinal[chain_ob.get_id()]
+	chain_ob_ordinal = idchainordinal[chain_ob_id]
 
 	#Iterate over all the synonimes avalible for that chain
 	for synonim in synonim_chains[chain_ob_ordinal]:
-		chainame = synonim
-		#Iterate throught the chains which interact with the present chain
-		for chainteracting in interactions[chainame]:
 
-			#for every pdb where there's an interaction between chainteracting and chain_ob
-			for pdbinteracting in interactions[chainame][chainteracting]:
+		#Iterate throught the pdbs where this sequene synonim is present
+		for pdbinteracting in synonim_chains[chain_ob_ordinal][synonim]:
 
+			#Iterate over chains in this pdbinteracting
+			for chainteracting in chainsbyfile[pdbinteracting]:
+
+				#Extract interacting chain id
+				chainteracting_id = chainteracting.get_id()
+
+				#Skip if interacting chain is same as synonim of chain_ob in the pdb
+				if chainteracting_id == synonim:
+					continue
+
+				#Skip if interacting chain has already been placed
+				if camefrom_pdb == pdbinteracting and chain_ob_id == synonim:
+					continue
 
 				#clash switch
 				clashed_chain = False
-
-				#If this loop corresponds to the already superimposed pdb for this chain where the present chain_ob comes from, skip it
-				if pdbinteracting == camefrom:
-					continue
 
 				#Extract the pdb where chain_ob and chainteracting are both toghether
 				pdbname = pdbinteracting
 				pdb_ob = allpdb[pdbname]
 				#chaintomove: chain of the same type than chain_ob in the pdb-file
-				chaintomove = pdb_ob[0][chainame]
+				chaintomove = pdb_ob[0][synonim]
 				#aplichain: chain that will be moved to interact with chain_ob
-				applychain = pdb_ob[0][chainteracting]
+				applychain = copy.deepcopy(pdb_ob[0][chainteracting_id])
+
+				#Verbose prints
+				if options.verbose:
+					print("Assembling chain %s from pdb %s to chain %s from assembled model." % (chainteracting_id, pdbname, chain_ob_id))
 
 				#Superimpose
-				print("Moving chain %s in base to chain %s from pdb %s" % (applychain.get_id(), chain_ob.get_id(),pdbname))
-				supmatrix = superimpose(fix_chain = chain_ob, mov_chain = chaintomove)
-
-				#Apply superimpositions to all chains of the pdb file
-				{ supmatrix.apply(pdb_ob[0][chainofile.get_id()]) for chainofile in chainsbyfile[pdbname] }
+				supmatrix = superimpose(fix_chain = chain_ob, mov_chain = chaintomove, apply_chain = applychain)
 
 				#Extract chain_applied ordinal (real sequence identifier, for )
-				chain_applied_ordinal = idchainordinal[applychain.get_id()]
+				chain_applied_ordinal = idchainordinal[chainteracting_id]
 
 				#Check if appliedchain collides with any of the already moved chains
 				for chainmoved in coordsmoved[chain_applied_ordinal]:
 					clashperc = clashtest(applychain, chainmoved)
 					if clashperc > 80:
 						clashed_chain = True
+						#verbose print
+						if options.verbose:
+							print("Interacting chain ", chainteracting_id, " Skipped. Space already filled ")
 						break
 
 				#Check if applied chain has clashed with any of the already-moved chains. If so, reverse chain to original position and skip
 				if clashed_chain == True:
 					continue
 
+				#Add one to chain limit if the ordinal of interacting chain corresponds to the limitant ordinal
+				if (options.limitant_chain != "False") and (chain_applied_ordinal in limitant_ordinal.keys()):
+					limitant_ordinal[chain_applied_ordinal] =+ 1
+
+				#If max-limit option is activated, check if maximum limit of subunits for model has been reached. Skip chain if so
+				if options.limitant_chain != "False" and limitant_ordinal[options.limitant_chain] >= options.max_chains:
+					return
+
 				#Add one to the superimpositions counter
 				global counter
 				counter += 1
 
 				#Save appliedchain (the moved one) in a new pdb
-				tempname = "temp" + str(counter) + ".pdb"
+				tempname =  str(options.path) + options.outfile + "_temp/temp" + str(counter) + ".pdb"
 				savepdb(applychain, tempname)
 
 				#Add applied atom coordenate list to coresponding list of already-moved chains
 				coordsmoved[chain_applied_ordinal].append(get_chain_coords(applychain))
 
-				#Repeat process for appliedchain
-				recursive(applychain, pdbinteracting, interactions, allpdb)
+				#Verbose prints
+				if options.verbose:
+					print("Chain %s succesfully assembled to the model. Stored on temp %i" % (chainteracting_id,counter))
 
+				#Check if limit of subunits has been reached, and end program if so
+				if counter >= options.max_chains:
+					print("maximum chains limit reached")
+					end_matchprot()
+
+				#Repeat process for appliedchain
+				recursive(applychain, pdbinteracting, chain_ob_id)
+
+
+
+#########
+##Options
+#########
+
+parser = argparse.ArgumentParser(description = "Matchprot reconstructs protein complexes from its individual protein interactions ")
+
+parser.add_argument('-i', '--input',
+	dest = "infiles",
+	action = "store",
+	nargs = '+',
+	default = None, 
+	help = "<Required> Input PDB interaction files. Every file has to contain a unique, one-to-one, protein interaction")
+
+parser.add_argument('-o', '--output',
+	dest = "outfile",
+	action = "store",    
+	default = "protein_complex", 
+	help = "(string) Output file name")
+
+parser.add_argument('-d', '--path',
+	dest = "path",
+	action = "store",    
+	default = "./", 
+	help = "(string) Output directory")
+
+parser.add_argument('-v', '--verbose',
+	dest = "verbose",
+	action = "store_true",    
+	default = False, 
+	help = "Print log comments in screen")
+
+parser.add_argument('-t', '--temp',
+	dest = "temp",
+	action = "store_true",    
+	default = False, 
+	help = "Don't delete temporary files. Each one of them contain a subunit of the complex")
+
+parser.add_argument('-m', '--max_chains',
+	dest = "max_chains",
+	action = "store",
+	type = int,
+	default = 0, 
+	help = "(integer) Maximum number of subunits for the final model")
+
+parser.add_argument('-l', '--limitant_chain',
+	dest = "limitant_chain",
+	action = "store",    
+	default = "False", 
+	help = "(string) If this option is activated, the --max_chains limit will only be applied to the subunits with the sequence of the selected identifier")
+
+
+options = parser.parse_args()
+
+parser.print_help()
+
+#Add "/" at the end of the path if user hasn't put it
+if not options.path[-1] == "/":
+	options.path = options.path + "/"
 
 ##########################################
 ##Store Relations between files and chains
 ##########################################
 
+#//No es que no sapiga comptar, es que estic afegint i treient variables continuament i no valia la pena
 """
 Dictionary, list and other variables index:
+
 	6. counter: counts the number of chains moved for bulding the present model
+
 	1. allpdb:
 		keys: input pdb filenames
 		values: Structure pdb object from file
 
 	2. chains_ids: all chain names introduced
+
 	3. modelchains: list. Contains lists of atom coordenates for every already saved chain
+
 	4. chainsbyfile: 
 		keys: input pdb filenames
 		values: list of chain-objects in pdb file
+
 	5. originalseqs: dictionary
 		keys: all different-sequence chain objects from the model
 		values: "ordinal" identifier. Every unique sequence in the model has a unique ordinal identifier
+
 	5. synonim_chains: 
 		keys: all ordinals
 			keys: chain identifiers with same ordinal (same sequence)
 				values: pdb files names where this second chain is found
+
 	7. idchainordinal: similar to original seqs. Dictionary: 
 		keys: all chain identifiers in the model
 		values: the corresponding ordinal sequence identifier
-	5. interactions: 
-		key: chain name
-		value: dictionary
-			key: chains which key interact with
-			value: pdbfile where this interaction is found
+
 	7. coordsmoved: dictionary with
 		keys: ordinals (unique sequence identifiers)
 		values: chain_objects moved of the corresponding sequence type
@@ -207,7 +322,7 @@ Dictionary, list and other variables index:
 parser = PDBParser(PERMISSIVE = 1)
 
 #Create allpdb dictionary
-allpdb = { filename : parser.get_structure(filename, filename) for filename in argv if argv.index(filename) != 0}
+allpdb = { filename : parser.get_structure(filename, filename) for filename in options.infiles }
 
 #Create chains, chains_ids set and chainsbyfile dictionary
 chains_ids = set()
@@ -241,7 +356,12 @@ for pdbfile in chainsbyfile:
 		for chain in originalchains:
 			if comparechains(testingchain,chain):
 				ordinal = originalchains[chain]
-				synonim_chains[ordinal][testingchainid] = pdbfile
+
+				if testingchainid in synonim_chains[ordinal].keys():
+					synonim_chains[ordinal][testingchainid].append(pdbfile)
+				else: 
+					synonim_chains[ordinal][testingchainid] = [ pdbfile ]
+
 				break
 
 		#If this sequence hasn't a ordinal yet, create it
@@ -249,70 +369,58 @@ for pdbfile in chainsbyfile:
 			ordinal = str(countordinals) + "th"
 			originalchains[testingchain] = ordinal
 			synonim_chains[ordinal] = dict()
-			synonim_chains[ordinal][testingchainid] = pdbfile
+
+			if testingchainid in synonim_chains[ordinal].keys():
+				synonim_chains[ordinal][testingchainid].append(pdbfile)
+			else: 
+				synonim_chains[ordinal][testingchainid] = [ pdbfile ]
+
 			countordinals += 1
+
 		idchainordinal[testingchain.get_id()] = ordinal
-
-
-################################
-#Create intersections dictionary
-################################
-
-interactions = {}
-intdict = dict()
-
-#Iterate over every subunit in the model
-for element in chains_ids:
-
-	#Iterate over every file in input
-	for filename in allpdb:
-		chainames = [ a.get_id() for a in chainsbyfile[filename] ]
-
-		#If this file contains the subunit of interest 
-		if element in chainames:
-			index = chainames.index(element)
-
-			#Iterate over chains_ids in pdbfile
-			for intchain in chainames:
-
-				#Skip key chain
-				if intchain == element:
-					continue
-
-				#Store interactions
-				if intchain not in intdict.keys():
-					intdict[intchain] = [ filename ]
-				else:
-					intdict[intchain].append(filename)
-					
-	interactions[element] = intdict
-	intdict = dict()
 
 #Create coordsmoved dictionary
 coordsmoved = { chain: [] for chain in synonim_chains }
+
+#Set limit chain dictionary control if option is activated
+if options.limitant_chain != "False":
+	limitant_ordinal[idchainordinal[options.limitant_chain]] = 0 
 
 #Debug prints
 print("allpdb: ",allpdb)
 print("chains_ids: ",chains_ids)
 print("chainsbyfile: ",chainsbyfile)
-print("interactions: ",interactions)
 print("coordsmoved: ",coordsmoved)
 print("synonim_chains: ",synonim_chains)
 print("original chains: ",originalchains)
-print("idchaiordinal :",idchainordinal)
+print("idchainordinal :",idchainordinal)
 
 #####################################
 ##Initialize algorithm of matchmaking
 #####################################
 
+#Delete temporary files directory with same name if there was any
+if os.path.isdir(str(options.path) + options.outfile + "_temp"):
+	rmtree(str(options.path) + options.outfile + "_temp") 
+
+#Make temporary files directory
+os.mkdir(str(options.path) + options.outfile + "_temp")
+
 #Obtain a random pdb interacting file
 seed = list(allpdb.keys())[0]
-#Iterate over pdb seed file chains
+
+#set starting variables
 areclashes = False
+prevchainid = "000"#At the begginig, we don't have any prevchaind (for no chain has yet been moved). This is just a placeholder
+
+#Iterate over pdb seed file chains
 for chain in chainsbyfile[seed]:
 
+	#Extract chain id
+	chainid = chain.get_id()
+
 	#Extract chain_ob ordinal (real sequence identifier, for )
-	chain_ordinal = idchainordinal[chain.get_id()]
+	chain_ordinal = idchainordinal[chainid]
 
 	for synonim in synonim_chains[chain_ordinal]:
 		chainame = synonim
@@ -324,12 +432,13 @@ for chain in chainsbyfile[seed]:
 
 		#save seed chains 
 		if not areclashes:
-			savepdb(chain, "temp" + str(counter) + ".pdb")
+			tempname =  str(options.path) + options.outfile + "_temp/temp" + str(counter) + ".pdb"
+			savepdb(chain, tempname)
 			coordsmoved[chain_ordinal].append(get_chain_coords(chain))
 
-			recursive(chain, seed, interactions, allpdb)
+			#Start recursive
+			recursive(chain_ob = chain, camefrom_pdb =  seed, camefrom_chain =  prevchainid)
+	prevchainid = chainid
 
-os.system("cat temp*.pdb > krosis.pdb")
-
-#Delete temporary files
-os.system("rm temp*.pdb")
+#End program
+end_matchprot()
