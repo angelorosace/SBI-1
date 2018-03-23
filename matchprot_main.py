@@ -13,12 +13,18 @@ io = PDBIO()
 global counter
 counter = 1
 
+def set_temp_name(number):
+	"""
+	Creates a name for a temporary file
+	"""
+	return str(options.path) + options.outfile + "_temp/temp" + str(number) + ".pdb"
+
 def end_matchprot():
 	"""
 	Ends matchprot, but before it merges all temporary files into the final model and remove the temporary files
 	"""
 	#Merge temporary files into definitive result
-	os.system(str("cat " + str(options.path) + options.outfile + "_temp/temp*.pdb > " + str(options.path) + str(options.outfile) + ".pdb"))
+	os.system(str("cat " + set_temp_name("*") + " > " + str(options.path) + str(options.outfile) + ".pdb"))
 
 	#Delete temporary files (if not option temp is selected)
 	if not options.temp:
@@ -112,7 +118,7 @@ def superimpose(fix_chain,mov_chain,apply_chain):
 	#Return superimposition matrices
 	return sup
 
-def recursive(chain_ob, camefrom_pdb, camefrom_chain):
+def recursive(chain_ob, camefrom_pdb):
 	"""
 	Main part of the script. 
 	Checks all avalible interactions for chain_ob sequence. For each interaction, selects a chaintomove (the one that has the samesequence as chain_ob in the interaction)
@@ -142,7 +148,7 @@ def recursive(chain_ob, camefrom_pdb, camefrom_chain):
 
 				#Extract interacting chain id
 				chainteracting_id = chainteracting.get_id()
-
+				
 				#Skip if interacting chain is same as synonim of chain_ob in the pdb
 				if chainteracting_id == synonim:
 					continue
@@ -150,7 +156,7 @@ def recursive(chain_ob, camefrom_pdb, camefrom_chain):
 				#Skip if interacting chain has already been placed
 				if camefrom_pdb == pdbinteracting and chain_ob_id == synonim:
 					continue
-
+				
 				#clash switch
 				clashed_chain = False
 
@@ -186,20 +192,18 @@ def recursive(chain_ob, camefrom_pdb, camefrom_chain):
 				if clashed_chain == True:
 					continue
 
-				#Add one to chain limit if the ordinal of interacting chain corresponds to the limitant ordinal
+				#Add one to chain limit if the ordinal of interacting chain corresponds to the limitant ordinal. Skip chain if limit is reached
 				if (options.limitant_chain != "False") and (chain_applied_ordinal in limitant_ordinal.keys()):
-					limitant_ordinal[chain_applied_ordinal] =+ 1
-
-				#If max-limit option is activated, check if maximum limit of subunits for model has been reached. Skip chain if so
-				if options.limitant_chain != "False" and limitant_ordinal[options.limitant_chain] >= options.max_chains:
-					return
+					limitant_ordinal[chain_applied_ordinal] += 1
+					if limitant_ordinal[chain_applied_ordinal] >= options.max_chains:
+						continue
 
 				#Add one to the superimpositions counter
 				global counter
 				counter += 1
 
 				#Save appliedchain (the moved one) in a new pdb
-				tempname =  str(options.path) + options.outfile + "_temp/temp" + str(counter) + ".pdb"
+				tempname =  set_temp_name(counter)
 				savepdb(applychain, tempname)
 
 				#Add applied atom coordenate list to coresponding list of already-moved chains
@@ -209,13 +213,14 @@ def recursive(chain_ob, camefrom_pdb, camefrom_chain):
 				if options.verbose:
 					print("Chain %s succesfully assembled to the model. Stored on temp %i" % (chainteracting_id,counter))
 
-				#Check if limit of subunits has been reached, and end program if so
-				if counter >= options.max_chains:
-					print("maximum chains limit reached")
+				#Check if limit of subunits has been reached, and end program if so (only when limitant chain option is not activated)
+				if (counter >= options.max_chains) and options.limitant_chain == "False":
+					if options.verbose:
+						print("maximum chains limit reached")
 					end_matchprot()
 
 				#Repeat process for appliedchain
-				recursive(applychain, pdbinteracting, chain_ob_id)
+				recursive(chain_ob = applychain, camefrom_pdb = pdbinteracting)
 
 
 
@@ -230,7 +235,7 @@ parser.add_argument('-i', '--input',
 	action = "store",
 	nargs = '+',
 	default = None, 
-	help = "<Required> Input PDB interaction files. Every file has to contain a unique, one-to-one, protein interaction")
+	help = "<Mandatory> Input PDB interaction files. Every file has to contain a unique, one-to-one, protein interaction")
 
 parser.add_argument('-o', '--output',
 	dest = "outfile",
@@ -272,7 +277,11 @@ parser.add_argument('-l', '--limitant_chain',
 
 options = parser.parse_args()
 
-parser.print_help()
+#Print help and stop if there's no input 
+if not options.infiles:
+	print()
+	parser.print_help()
+	exit("Error: -i option is mandatory")
 
 #Add "/" at the end of the path if user hasn't put it
 if not options.path[-1] == "/":
@@ -282,11 +291,11 @@ if not options.path[-1] == "/":
 ##Store Relations between files and chains
 ##########################################
 
-#//No es que no sapiga comptar, es que estic afegint i treient variables continuament i no valia la pena
+#//No es que no sapiga comptar, es que estic afegint i treient variables continuament i no valia la pena reindexar-ho tot
 """
 Dictionary, list and other variables index:
 
-	6. counter: counts the number of chains moved for bulding the present model
+	1. counter: counts the number of chains moved for bulding the present model
 
 	1. allpdb:
 		keys: input pdb filenames
@@ -379,10 +388,15 @@ for pdbfile in chainsbyfile:
 
 		idchainordinal[testingchain.get_id()] = ordinal
 
+#######################################################
+##Setting coordsmoved and limitant ordinal dictionaries
+#######################################################
+
 #Create coordsmoved dictionary
 coordsmoved = { chain: [] for chain in synonim_chains }
 
 #Set limit chain dictionary control if option is activated
+limitant_ordinal = dict()
 if options.limitant_chain != "False":
 	limitant_ordinal[idchainordinal[options.limitant_chain]] = 0 
 
@@ -394,6 +408,7 @@ print("coordsmoved: ",coordsmoved)
 print("synonim_chains: ",synonim_chains)
 print("original chains: ",originalchains)
 print("idchainordinal :",idchainordinal)
+print("limitant ordinal :",limitant_ordinal)
 
 #####################################
 ##Initialize algorithm of matchmaking
@@ -411,7 +426,6 @@ seed = list(allpdb.keys())[0]
 
 #set starting variables
 areclashes = False
-prevchainid = "000"#At the begginig, we don't have any prevchaind (for no chain has yet been moved). This is just a placeholder
 
 #Iterate over pdb seed file chains
 for chain in chainsbyfile[seed]:
@@ -432,12 +446,12 @@ for chain in chainsbyfile[seed]:
 
 		#save seed chains 
 		if not areclashes:
-			tempname =  str(options.path) + options.outfile + "_temp/temp" + str(counter) + ".pdb"
+			tempname =  set_temp_name(counter)
 			savepdb(chain, tempname)
 			coordsmoved[chain_ordinal].append(get_chain_coords(chain))
 
 			#Start recursive
-			recursive(chain_ob = chain, camefrom_pdb =  seed, camefrom_chain =  prevchainid)
+			recursive(chain_ob = chain, camefrom_pdb =  seed)
 	prevchainid = chainid
 
 #End program
