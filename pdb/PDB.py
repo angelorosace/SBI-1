@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/bin/env python3
 
 from Sequences import *
 from Bio.PDB import protein_letters_3to1
@@ -11,7 +11,6 @@ ascii_lowercase = 'abcdefghijklmnopqrstuvwxyz'
 ascii_uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 numbers = '01234567890'
 ltr = ascii_uppercase[::-1] + ascii_lowercase + numbers
-
 
 
 class BASE(object):
@@ -70,8 +69,10 @@ class BASE(object):
         Apply rotation and translation to the atomic coordinates.
         It goes all until Atoms and it transforms them. (this method
         overrided in the ATOM class
+
         @param rot: A right multiplying rotation matrix
         @type rot: 3x3 Numeric array
+
         @param tran: the translation vector
         @type tran: size 3 Numeric array
         """
@@ -80,9 +81,9 @@ class BASE(object):
 class ProteinStructure(BASE):
     """Protein Structure class with the typical hierarchical structure:
             Structure
-                Chain
-                    Residue
-                        Atom
+                ·Chain
+                    ·Residue
+                        ·Atom
             It inherits the attributes from BASE with some changes: its childs are a list of chain objects"""
     def __init__(self, id ,pdb_file):
         self.childs = self._init_chains(pdb_file)
@@ -140,12 +141,18 @@ class ProteinStructure(BASE):
             for res in chain:
                 r.append(res)
         return r
+    def get_other_chain(self, chain_id):
+        for chain in self:
+            if chain.get_id() is not chain_id:
+                return chain
     def add_chain(self, nw_chain, cid, track_name = False):
         """
             Adds the input chain object to the Structure.
+
          It does a deep copy not to mess with the original chain object.
          If the given chain id (cid) is already in use by another chain in
           the structure it will look for an alternative name.
+
         :param nw_chain: Chain object to add to the structure object
         :param cid: chain id you want to give
         :param track_name(Boolean): default False;
@@ -159,6 +166,8 @@ class ProteinStructure(BASE):
                     break
             if nw_id is None:
                 stderr.write("Internal Error: Limit of valid sequence names reached. Program finished abrubtly.\n")
+                self.save_to_file('last_pdb_before_error.pdb')
+                exit(1)
                 return None
             else:
                 stderr.write('WARNING!: Tried to add a chain to %s with an already existing Chain id (%s). I will try to change it to %s.\n' %(cid , self.id, nw_id))
@@ -199,6 +208,7 @@ class ProteinStructure(BASE):
     def find_clashes(self):
         """
         Check every pair of backbone atoms of diferent chains to see if they clash.
+
         A clash is defined when the distance between two atoms is greater than the sum of their VanderWaal radii
         """
         vwr = {'C':1.8, 'O':1.4, 'N':1.7, 'S':2, 'CA': 1.8}
@@ -227,6 +237,7 @@ class ProteinStructure(BASE):
     def save_to_file(self, outfile, atom_name = None, chain_name = None):
         """
         Saves the structure file in a pdb format to the outfile
+
         IF @atom_name given : it will select only the especified atoms.
         IF @chain_name given: it will select only the especified chains.
         """
@@ -241,9 +252,9 @@ class ProteinStructure(BASE):
                     for atom in residue:
                         if atom_name is None or atom.get_name() in atom_name:
                             if atom.occupancy is not None and atom.temp_factor is not None:
-                                out_pdb.write("%-6s%5s %4s %3s %s%4s    %8.3f%8.3f%8.3f%6.2f%6.2f\n" %('ATOM', line_num, atom.name,
+                                out_pdb.write("%-6s%5s %4s %3s %s%4s    %8.3f%8.3f%8.3f%6.2f%6.2f           %s\n" %('ATOM', line_num, atom.name,
                                                             residue.name, chain.id, residue.num,round(atom.coords[0],3),
-                                                            atom.coords[1], atom.coords[2],atom.occupancy, atom.temp_factor))
+                                                            atom.coords[1], atom.coords[2],atom.occupancy, atom.temp_factor, atom.name[0]))
                             else:
                                 out_pdb.write("%-6s%5s %4s %3s %s%4s    %8.3f%8.3f%8.3f\n" % ('ATOM', line_num, atom.name,
                                                             residue.name, chain.id, residue.num, round(atom.coords[0], 3),
@@ -254,9 +265,9 @@ class ProteinStructure(BASE):
 class Chain(BASE):
     """Chain class in the typical hierarchical structure:
                Structure
-                   Chain
-                       Residue
-                           Atom
+                   ·Chain
+                       ·Residue
+                           ·Atom
         It inherits the attributes from BASE with some changes: its childs are a list of residues objects
         additionally its sequence is a ProteinSequence object"""
     def __init__(self, id, chain_dict):
@@ -336,6 +347,7 @@ class Chain(BASE):
         """
         Iterates through all the possible pair of atoms (one from self and the other from other_chain)
         and returns a list of the residue numbers from self that interact with other_chain.
+
         :param other_chain: a chain object to be compared with
         :param dist: distance of interaction in Armstrong (default = 4)
         :return: List of intreacting residues
@@ -353,9 +365,9 @@ class Chain(BASE):
 class Residue(BASE):
     """Residue class in the typical hierarchical structure:
                    Structure
-                       Chain
-                           Residue
-                               Atom
+                       ·Chain
+                           ·Residue
+                               ·Atom
             It inherits the attributes from BASE with some changes: its childs are a list of Atom object.
             additionally its sequence is a ProteinSequence object"""
     def __init__(self, id_tupple, res_list):
@@ -381,12 +393,12 @@ class Residue(BASE):
 class Atom(BASE):
     """Atom class in the typical hierarchical structure:
                        Structure
-                           Chain
-                               Residue
-                                   Atom
+                           ·Chain
+                               ·Residue
+                                   ·Atom
         It inherits the attributes from BASE with some changes:
-             It has no child (it's the bottom of the hierarchy
-             It overrides the transform method with an actuall changing its coordinates."""
+            · It has no child (it's the bottom of the hierarchy
+            · It overrides the transform method with an actuall changing its coordinates."""
     def __init__(self, info):
         self.childs = []
         BASE.__init__(self, info[1])
@@ -402,8 +414,9 @@ class Atom(BASE):
     def __sub__(self, other):
         """
         Calculate distance between two atoms.
+
         Example:
-             distance = atom1-atom2
+            · distance = atom1-atom2
         """
         if self.__class__ == other.__class__:
             diff = numpy.array(self.coords) - numpy.array(other.coords)
@@ -429,6 +442,7 @@ class Atom(BASE):
         """Apply rotation and translation to the atomic coordinates.
         @param rot: A right multiplying rotation matrix
         @type rot: 3x3 Numeric array
+
         @param tran: the translation vector
         @type tran: size 3 Numeric array
         """

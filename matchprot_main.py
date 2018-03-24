@@ -2,7 +2,7 @@
 
 from Bio.PDB import *
 from shutil import rmtree
-from sys import exit
+from sys import *
 import os
 import copy
 import argparse
@@ -54,6 +54,10 @@ def comparechains(chain1,chain2):
 	listres1 = get_seq(chain1)
 	listres2 = get_seq(chain2)
 
+	#If length is not the same, sequences are considered not equal
+	if len(listres1) != len(listres2):
+		return False
+
 	#Compare if both lists are equal and store the number of matches and mismatches
 	comparlist = [ res1 == res2 for res1,res2 in zip(listres1,listres2)]
 	match_vs_mismatch = ((comparlist.count(True),comparlist.count(False)))
@@ -70,7 +74,7 @@ def savepdb (pdb_ob,filename):
 
 def clashtest(chain1, coordsatom2):
 	"""
-	Returns True if any of the atoms on chain1 clash with any of the atom coordenates in chain2
+	Returns True if more than 10% of atoms in chain1 are clashing with any atom in the coordenates of coordsatom2
 	"""
 	clashcounter = 0
 
@@ -95,19 +99,21 @@ def clashtest(chain1, coordsatom2):
 	clashpercent  = clashcounter/numatoms1 * 100
 	#if clashcounter > 0:
 	#	stderr.write("%i per cent atoms in chain %s are clashing\n" %(clashpercent, chain1.get_id()))
-
+	
 	#Return percentage of clashing atoms
-	return clashpercent
+	return clashpercent > 10
 
 def superimpose(fix_chain,mov_chain,apply_chain):
 	"""
 	Superimpose peptide chain mov_chain on fix_chain with Biopython superimposer, and return superimposition matrices
 	"""
+
 	sup = Superimposer()
 
 	#Obtain atom-objects list by for fix and mov chain
 	fix_atoms = list(fix_chain.get_atoms())
 	mov_atoms = list(mov_chain.get_atoms())
+
 
 	#Superimpose mov over fix
 	sup.set_atoms(fix_atoms	,mov_atoms)
@@ -178,10 +184,10 @@ def recursive(chain_ob, camefrom_pdb):
 				#Extract chain_applied ordinal (real sequence identifier, for )
 				chain_applied_ordinal = idchainordinal[chainteracting_id]
 
+
 				#Check if appliedchain collides with any of the already moved chains
-				for chainmoved in coordsmoved[chain_applied_ordinal]:
-					clashperc = clashtest(applychain, chainmoved)
-					if clashperc > 80:
+				for counter in coordsmoved:
+					if clashtest(applychain, coordsmoved[counter]):
 						clashed_chain = True
 						#verbose print
 						if options.verbose:
@@ -193,28 +199,27 @@ def recursive(chain_ob, camefrom_pdb):
 					continue
 
 				#Add one to chain limit if the ordinal of interacting chain corresponds to the limitant ordinal. Skip chain if limit is reached
-				if (options.limitant_chain != "False") and (chain_applied_ordinal in limitant_ordinal.keys()):
-					limitant_ordinal[chain_applied_ordinal] += 1
-					if limitant_ordinal[chain_applied_ordinal] >= options.max_chains:
+				if (options.limitant_chains != "False") and (chain_applied_ordinal in limitant_ordinals.keys()):
+					limitant_ordinals[chain_applied_ordinal][0] += 1
+					if limitant_ordinals[chain_applied_ordinal][0] > limitant_ordinals[chain_applied_ordinal][1]:
 						continue
 
 				#Add one to the superimpositions counter
-				global counter
-				counter += 1
+				counter = counter + 1
 
 				#Save appliedchain (the moved one) in a new pdb
 				tempname =  set_temp_name(counter)
 				savepdb(applychain, tempname)
 
 				#Add applied atom coordenate list to coresponding list of already-moved chains
-				coordsmoved[chain_applied_ordinal].append(get_chain_coords(applychain))
+				coordsmoved[counter] = get_chain_coords(applychain)
 
 				#Verbose prints
 				if options.verbose:
 					print("Chain %s succesfully assembled to the model. Stored on temp %i" % (chainteracting_id,counter))
 
 				#Check if limit of subunits has been reached, and end program if so (only when limitant chain option is not activated)
-				if ( options.max_chains != -1) and (counter >= options.max_chains) and options.limitant_chain == "False":
+				if ( options.max_chains != -1) and (counter >= options.max_chains[0]) and options.limitant_chains == "False":
 					if options.verbose:
 						print("maximum chains limit reached")
 					end_matchprot()
@@ -263,15 +268,31 @@ parser.add_argument('-m', '--max_chains',
 	dest = "max_chains",
 	action = "store",
 	type = int,
-	default = -1, 
-	help = "(integer) Maximum number of subunits for the final model")
+	default =  -1,
+	nargs = '+', 
+	help = "(integer) Maximum number of subunits for the final model. If limitant_chains is activated, list of absolute proportions for subunit in complex")
 
-parser.add_argument('-l', '--limitant_chain',
-	dest = "limitant_chain",
+parser.add_argument('-l', '--limitant_chains',
+	dest = "limitant_chains",
 	action = "store",    
-	default = "False", 
-	help = "(string) If this option is activated, the --max_chains limit will only be applied to the subunits with the sequence of the selected identifier")
+	default = "False",
+	nargs = '+', 
+	help = """(string) List of limitant chain identifiers for the model.
+	Each sequence specified in this list will be in the model equal or less times than the corresponding number in --limitant_chains list multiplied by the --proportions_multiplier option.
+	If a chain has more than one name in your model, put just one of its identifiers.""")
 
+parser.add_argument('-p', '--proportions_multiplier',
+	dest = "proportions_multiplier",
+	action = "store",
+	type = int,
+	default = 1,
+	help = "(integer) If --limitant_chains is activated, number to multiply the proportions by. Default is 1")
+
+parser.add_argument('-s', '--seed_pdb',
+	dest = "seed_pdb",
+	action = "store",
+	default = "False",
+	help = "(string) Name of the pdb file from which the reconstruction will start. Default is random")
 
 options = parser.parse_args()
 
@@ -280,6 +301,12 @@ if not options.infiles:
 	print()
 	parser.print_help()
 	exit("Error: -i option is mandatory")
+
+#If limitant_chains option is activated and its length do not coincide with limitant_chains, die and show error message
+if (options.limitant_chains != "False") and (len(options.limitant_chains) != len(options.max_chains)):
+	print()
+	parser.print_help()
+	exit("Error: max_chains list of integers and limitant_chainss list of chains are not the same length")
 
 #Add "/" at the end of the path if user hasn't put it
 if not options.path[-1] == "/":
@@ -320,9 +347,12 @@ Dictionary, list and other variables index:
 		keys: all chain identifiers in the model
 		values: the corresponding ordinal sequence identifier
 
-	7. coordsmoved: dictionary with
-		keys: ordinals (unique sequence identifiers)
-		values: chain_objects moved of the corresponding sequence type
+	7. coordsmoved: set with the coordinates of all chains already saved 
+
+	8. limitant_ordinals: dictinoary. Empty if limitant chains option is not activated
+		keys: all ordinals for chains stated in limitant_chains option
+			value[0]: counter of how many sequences corresponding to this ordinal have been already saved
+			value[1]: maximum number allowed of chains with this sequence in the final model
 """
 
 # Create a PDBparser object
@@ -391,12 +421,12 @@ for pdbfile in chainsbyfile:
 #######################################################
 
 #Create coordsmoved dictionary
-coordsmoved = { chain: [] for chain in synonim_chains }
+coordsmoved = {}
 
-#Set limit chain dictionary control if option is activated
-limitant_ordinal = dict()
-if options.limitant_chain != "False":
-	limitant_ordinal[idchainordinal[options.limitant_chain]] = 0 
+#Set limitant ordinals double dictionary if limitant_chains option is set
+limitant_ordinals = dict()
+if options.limitant_chains != "False":
+	limitant_ordinals = { idchainordinal[chainid] : [ 0, chainlimit*options.proportions_multiplier ] for chainid,chainlimit in zip(options.limitant_chains,options.max_chains) }
 
 #Debug prints
 print("allpdb: ",allpdb)
@@ -406,7 +436,7 @@ print("coordsmoved: ",coordsmoved)
 print("synonim_chains: ",synonim_chains)
 print("original chains: ",originalchains)
 print("idchainordinal :",idchainordinal)
-print("limitant ordinal :",limitant_ordinal)
+print("limitant ordinals :",limitant_ordinals)
 
 #####################################
 ##Initialize algorithm of matchmaking
@@ -420,7 +450,10 @@ if os.path.isdir(str(options.path) + options.outfile + "_temp"):
 os.mkdir(str(options.path) + options.outfile + "_temp")
 
 #Obtain a random pdb interacting file
-seed = list(allpdb.keys())[0]
+if options.seed_pdb != "False":
+	seed = options.seed_pdb
+else:
+	seed = list(allpdb.keys())[0]
 
 #set starting variables
 areclashes = False
@@ -437,16 +470,15 @@ for chain in chainsbyfile[seed]:
 	for synonim in synonim_chains[chain_ordinal]:
 		chainame = synonim
 		#Check collisions for seed chains
-		for chainmoved in coordsmoved[chain_ordinal]:
-			clashperc = clashtest(chain, chainmoved)
-			if clashperc > 80:
+		for counter in coordsmoved:
+			if clashtest(chain, coordsmoved[counter]):
 				areclashes = True 
 
 		#save seed chains 
 		if not areclashes:
 			tempname =  set_temp_name(counter)
 			savepdb(chain, tempname)
-			coordsmoved[chain_ordinal].append(get_chain_coords(chain))
+			coordsmoved[counter] = (get_chain_coords(chain))
 
 			#Start recursive
 			recursive(chain_ob = chain, camefrom_pdb =  seed)
@@ -454,3 +486,24 @@ for chain in chainsbyfile[seed]:
 
 #End program
 end_matchprot()
+
+#########################################################
+##########HOLA MARTAAAAAAAAAAAAAAAAAAAAAAAA: Log change
+#######################################################
+
+#//Per fer front al repte d'ensamblar una estructura asimètrica (com es l'ATP syntasa), he fet les seguents modificacions
+
+#//1. Clashtest global: Ara el clash test no es fa de la cadena a guardar (apply chain) contra les coordenades de les cadenes ja guardades ->
+#//de mateixa sequencia (mateix ordinal), sino contra TOTES les cadenes guardades
+#//Es mes lent, pero he tingut problemes en aquest sentit amb l'ATP syntasa
+
+#//2. Limitant chains: ara es poden fixar moltes limitant chains (no nomes una), cada una de les quals te el seu propi limit marcat a la opcio ->
+#// --max_chains. Ara, ambdues opcions guarden dades en format llista, i aquestes llistes son combinades en el diccionari de dobles-llistes ->
+#//Limitant_ordinals
+
+#//3. Proportions multiplier option: Un multiplicador que multiplica els lles proporcions establertes a max_chains. Per exemple, si tenim una ->
+#//estructura AABAABAABAAB que volem repetir 25 cops fiquem: --max_chains 1 2 --limitant_chains B A --proprtions_mulitplier 25
+
+#//4. Seed option: Una altre opcio per donar als usuaris la possiblitat de triar el seed que vulguin 
+
+#IMPORTANT: Soc conscient que només s'ensambla la meitat de l'atp syntasa. Ens falta una interacció que l'script de l'Alvaro no ha tret. 
