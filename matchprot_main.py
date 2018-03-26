@@ -487,9 +487,9 @@ for chain in chainsbyfile[seed]:
 #End program
 end_matchprot()
 
-#########################################################
-##########HOLA MARTAAAAAAAAAAAAAAAAAAAAAAAA: Log change
-#######################################################
+######################################################################################
+##########HOLA MARTAAAAAAAAAAAAAAAAAAAAAAAA: Log change des que vam parlar l'ultim cop
+######################################################################################
 
 #//Per fer front al repte d'ensamblar una estructura asimètrica (com es l'ATP syntasa), he fet les seguents modificacions
 
