@@ -28,15 +28,15 @@ def end_matchprot():
 
 	#Delete temporary files (if not option temp is selected)
 	if not options.temp:
-		rmtree(str(options.path) + options.outfile + "_temp") 
+		rmtree(str(options.path) + options.outfile + "_temp")
+	#os.system("chimera " + str(options.path) + str(options.outfile) + ".pdb")
 	exit()
 
-
-def get_chain_coords(chain):
+def get_chain_coords_CA_P(chain):
 	"""
-	Obtains atom coordenates list from a chain object
+	Obtains main structure atom coordenates (carbon alpha in proteins and Phosphate in DNA) list from a chain object
 	"""
-	return [ atom.get_coord() for atom in chain.get_atoms() ]
+	return [ atom.get_coord() for atom in chain.get_atoms() if atom.get_id() == "CA" or atom.get_id() == "P"]
 
 def get_seq(chain):
 	"""
@@ -72,24 +72,20 @@ def savepdb (pdb_ob,filename):
 	io.set_structure(pdb_ob)
 	io.save(filename)
 
-def clashtest(chain1, coordsatom2):
+def clashtest(atoms1, coordsatom2):
 	"""
-	Returns True if more than 10% of atoms in chain1 are clashing with any atom in the coordenates of coordsatom2
+	Returns True if more than 10% of atoms in atoms1 are clashing with any atom in the coordenates of coordsatom2
 	"""
 	clashcounter = 0
 
-	#Obtain a list of atom objects for chain1
-	atom1 = [ atom for atom in chain1.get_atoms() ]
-
 	#Obtain number of atoms in both chains
-	numatoms1 = len(atom1)
-	numatoms2 = len(coordsatom2)
+	numatoms1 = len(atoms1)
 
 	#Prepare list of atoms for neighbour search
-	ns = NeighborSearch(atom1)
+	ns = NeighborSearch(atoms1)
 
 	#Check collisions of every atom coordenates in coordsatom2 to already-prepared-list of atoms1 (collision distance: 4 amstrong)
-	for clashes in map(lambda x: ns.search(x,4.0), coordsatom2):
+	for clashes in map(lambda x: ns.search(x,2.0), coordsatom2):
 		#Count number of atoms clashing
 		if len(clashes)> 0:
 			clashcounter += 1
@@ -101,7 +97,7 @@ def clashtest(chain1, coordsatom2):
 	#	stderr.write("%i per cent atoms in chain %s are clashing\n" %(clashpercent, chain1.get_id()))
 	
 	#Return percentage of clashing atoms
-	return clashpercent > 10
+	return clashpercent > 5
 
 def superimpose(fix_chain,mov_chain,apply_chain):
 	"""
@@ -110,10 +106,9 @@ def superimpose(fix_chain,mov_chain,apply_chain):
 
 	sup = Superimposer()
 
-	#Obtain atom-objects list by for fix and mov chain
-	fix_atoms = list(fix_chain.get_atoms())
-	mov_atoms = list(mov_chain.get_atoms())
-
+	#Obtain list of main atom-objects (Carbon alpha for protein and Phosphate for DNA/RNA) by for fix and mov chain
+	fix_atoms = list([atom for atom in fix_chain.get_atoms() if atom.get_id() == "CA" or atom.get_id() == "P"])
+	mov_atoms = list([atom for atom in mov_chain.get_atoms() if atom.get_id() == "CA" or atom.get_id() == "P"])
 
 	#Superimpose mov over fix
 	sup.set_atoms(fix_atoms	,mov_atoms)
@@ -146,6 +141,10 @@ def recursive(chain_ob, camefrom_pdb):
 	#Iterate over all the synonimes avalible for that chain
 	for synonim in synonim_chains[chain_ob_ordinal]:
 
+		#if non_unique option is activated, only use pdbs with the original chain id of this chain
+		if options.non_unique and (synonim != chain_ob_id):
+			continue
+
 		#Iterate throught the pdbs where this sequene synonim is present
 		for pdbinteracting in synonim_chains[chain_ob_ordinal][synonim]:
 
@@ -160,8 +159,9 @@ def recursive(chain_ob, camefrom_pdb):
 					continue
 
 				#Skip if interacting chain has already been placed
-				if camefrom_pdb == pdbinteracting and chain_ob_id == synonim:
+				if (camefrom_pdb == pdbinteracting) and (chain_ob_id == chainteracting):
 					continue
+
 
 				#clash switch
 				clashed_chain = False
@@ -186,8 +186,9 @@ def recursive(chain_ob, camefrom_pdb):
 
 
 				#Check if appliedchain collides with any of the already moved chains
+				applyatoms = [ atom for atom in applychain.get_atoms() if atom.get_id() == "CA" or atom.get_id() == "P"]
 				for counter in coordsmoved:
-					if clashtest(applychain, coordsmoved[counter]):
+					if clashtest(applyatoms, coordsmoved[counter]):
 						clashed_chain = True
 						#verbose print
 						if options.verbose:
@@ -212,7 +213,7 @@ def recursive(chain_ob, camefrom_pdb):
 				savepdb(applychain, tempname)
 
 				#Add applied atom coordenate list to coresponding list of already-moved chains
-				coordsmoved[counter] = get_chain_coords(applychain)
+				coordsmoved[counter] = get_chain_coords_CA_P(applychain)
 
 				#Verbose prints
 				if options.verbose:
@@ -293,6 +294,12 @@ parser.add_argument('-s', '--seed_pdb',
 	action = "store",
 	default = "False",
 	help = "(string) Name of the pdb file from which the reconstruction will start. Default is random")
+
+parser.add_argument('-n', '--non_unique',
+	dest = "non_unique",
+	action = "store_true",
+	default = False,
+	help = "Set this option if your model has chains with non-unique sequences BUT you still want to treat them as different chains")
 
 options = parser.parse_args()
 
@@ -469,20 +476,37 @@ for chain in chainsbyfile[seed]:
 
 	for synonim in synonim_chains[chain_ordinal]:
 		chainame = synonim
+
+		#if non_unique option is activated, only use pdbs with the original chain id of this chain
+		if options.non_unique and (synonim != chainid):
+			continue
+
+		#Add one to chain limit if the ordinal of interacting chain corresponds to the limitant ordinal. Skip chain if limit is reached
+		if (options.limitant_chains != "False") and (chain_ordinal in limitant_ordinals.keys()):
+			limitant_ordinals[chain_ordinal][0] += 1
+			if limitant_ordinals[chain_ordinal][0] > limitant_ordinals[chain_ordinal][1]:
+				continue
+
+		#Check if limit of subunits has been reached, and end program if so (only when limitant chain option is not activated)
+		if ( options.max_chains != -1) and (counter >= options.max_chains[0]) and options.limitant_chains == "False":
+			if options.verbose:
+				print("maximum chains limit reached")
+			end_matchprot()
+
 		#Check collisions for seed chains
+		chainatoms = [ atom for atom in chain.get_atoms() if atom.get_id() == "CA" or atom.get_id() == "P"]
 		for counter in coordsmoved:
-			if clashtest(chain, coordsmoved[counter]):
+			if clashtest(chainatoms, coordsmoved[counter]):
 				areclashes = True 
 
 		#save seed chains 
 		if not areclashes:
 			tempname =  set_temp_name(counter)
 			savepdb(chain, tempname)
-			coordsmoved[counter] = (get_chain_coords(chain))
+			coordsmoved[counter] = (get_chain_coords_CA_P(chain))
 
 			#Start recursive
 			recursive(chain_ob = chain, camefrom_pdb =  seed)
-	prevchainid = chainid
 
 #End program
 end_matchprot()
@@ -506,4 +530,27 @@ end_matchprot()
 
 #//4. Seed option: Una altre opcio per donar als usuaris la possiblitat de triar el seed que vulguin 
 
-#IMPORTANT: Soc conscient que només s'ensambla la meitat de l'atp syntasa. Ens falta una interacció que l'script de l'Alvaro no ha tret. 
+#//5. get_chains_coords_CA_P: Per accelerar el procés, ara el clash test només el fa sobre els carbonis alpha (o sobre P en cadenes de DNA/RNA). 
+#// La informació important hi es, i estalviem molt temps
+
+#//6. També he posat el control de limit de cadenes al loop del pdb-seed, que es algu que ja hauria d'haver fet
+
+#//7. He aplicat el sistema CA-P a les superimposicions per fer-les més ràpides. OPTIMIZED
+
+#//8. Opcio non-unique: (NO ACABADA) un tema complicat aquest. El tema es que fent proves amb la càpsida vírica m'en he adonat que a vegades una mateixa sequencia
+#//pot tenir unes interaccions en un moment i unes en un altre. Si entres a la pagina web de la capsida vírca,(https://www.rcsb.org/3d-view/3J7L/1) fixa't
+#// que les molecules roses i blanques son la mateixa sequencia, pero interactuen de forma diferent.
+#//La idea d'aquesta opcio es anular el sistema de sinonims en cadenes com aquestes. No es massa ortodox, pero servira. No hi ha altre manera
+
+#######################
+##RESPECTE ALS EXEMPLES
+#######################
+#//M els han passat l'Adri i el Marc, molt majetes ells
+
+#//1. 2f1d_fosfate_dehydratase: Es la capseta que ens va passar el profe per campus. La reconstrueix bé, com era d'esperar.
+#//2. 3j7l_virus_capside: Encara no l'he aconseguit. Planejo tenirlo implementant la opcio 8 per les cadenes B i C
+#//3. 3kuy_nucleosome: un model mixte DNA-proteina, bastant senzillet. He afegit aixo del fosfor per resoldra-la, i ho fa prou bé
+#//4. 5vox_atpase: ve a ser un cas similar al de l'ATP syntase, i per tant poc interesant. Es podria resoldre amb algo d'estiquiometria, 
+#//a l'igual que l'ATP syntase
+#//5. 5oom_ribosome: he executat l'script amb el ribosoma i surt... algo. Algo que sembla un ribosoma. Pero no t'ho podria confirmar del tot. 
+#// Potser fer un matchmaker amb ribosoma original
