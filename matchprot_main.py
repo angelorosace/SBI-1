@@ -363,7 +363,7 @@ Dictionary, list and other variables index:
 		keys: all chain identifiers in the model
 		values: the corresponding ordinal sequence identifier
 
-	7. coordsmoved: set with the coordinates of all chains already saved 
+	7. coordsmoved: set with the Calpha or P coordinates of all chains already saved 
 
 	8. limitant_ordinals: dictinoary. Empty if limitant chains option is not activated
 		keys: all ordinals for chains stated in limitant_chains option
