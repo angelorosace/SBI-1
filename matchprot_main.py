@@ -149,88 +149,95 @@ def recursive(chain_ob, camefrom_pdb):
 		for pdbinteracting in synonim_chains[chain_ob_ordinal][synonim]:
 
 			#Iterate throught the models  of the pdb where synonim is present
-			for model in synonim_chains[chain_ob_ordinal][synonim][pdbinteracting]:
+			for model_syn in synonim_chains[chain_ob_ordinal][synonim][pdbinteracting]:
 
 				#Iterate over chains in this model
-				for chainteracting in chainsbyfilebymodel[pdbinteracting][model]:
+				for model_inter in chainsbyfilebymodel[pdbinteracting]:
 
-					#Extract interacting chain id
-					chainteracting_id = chainteracting.get_id()
-					
-					#Skip if interacting chain has already been placed in previous interaction
-					if (camefrom_pdb == pdbinteracting) and (chain_ob_id == chainteracting):
-						continue
+					for chainteracting in chainsbyfilebymodel[pdbinteracting][model_inter]:
 
-					#clash switch
-					clashed_chain = False
-
-					#Extract the pdb where chain_ob and chainteracting are both toghether
-					pdbname = pdbinteracting
-					pdb_ob = allpdb[pdbname]
-					#chaintomove: chain of the same type than chain_ob in the pdb-file-model 
-					chaintomove = pdb_ob[model][synonim]
-					#aplichain: chain that will be moved to interact with chain_ob
-					applychain = copy.deepcopy(pdb_ob[model][chainteracting_id])
-
-					#Verbose prints
-					if options.verbose:
-						print("Assembling chain %s from pdb %s to chain %s from assembled model." % (chainteracting_id, pdbname, chain_ob_id))
-
-					#Superimpose
-					supmatrix = superimpose(fix_chain = chain_ob, mov_chain = chaintomove, apply_chain = applychain)
-
-					#Extract chain_applied ordinal (real sequence identifier, for )
-					chain_applied_ordinal = idchainordinal[chainteracting_id]
-
-
-					#Check if appliedchain collides with any of the already moved chains
-					applyatoms = [ atom for atom in applychain.get_atoms() if atom.get_id() == "CA" or atom.get_id() == "P"]
-					for counter in coordsmoved:
-						if clashtest(applyatoms, coordsmoved[counter]):
-							clashed_chain = True
-							#verbose print
-							if options.verbose:
-								print("Interacting chain ", chainteracting_id, " Skipped. Space already filled ")
-							break
-
-					#Check if applied chain has clashed with any of the already-moved chains. If so, reverse chain to original position and skip
-					if clashed_chain == True:
-						continue
-
-					#If unique option is activated use chain is as keys, else use ordinals-sequence
-					if options.unique:
-						mykey = chainteracting_id
-					else: 
-						mykey = chain_applied_ordinal
-
-					#Add one to chain limit if the ordinal of interacting chain corresponds to the limitant ordinal. Skip chain if limit is reached
-					if (options.limitant_chains != "False") and (mykey in limitant_ordinals.keys()):
-						limitant_ordinals[mykey][0] += 1
-						if limitant_ordinals[mykey][0] > limitant_ordinals[mykey][1]:
+						#Extract interacting chain id
+						chainteracting_id = chainteracting.get_id()
+						
+						#Skip if interacting chain and chain to move are actually the same
+						if (synonim == chainteracting_id) and (model_syn == model_inter):
 							continue
 
-					#Add one to the superimpositions counter
-					counter = counter + 1
+						#Skip if interacting chain has already been placed in previous interaction
+						if (camefrom_pdb == pdbinteracting) and (chain_ob_id == chainteracting):
+							continue
 
-					#Save appliedchain (the moved one) in a new pdb
-					tempname =  set_temp_name(counter)
-					savepdb(applychain, tempname)
 
-					#Add applied atom coordenate list to coresponding list of already-moved chains
-					coordsmoved[counter] = get_chain_coords_CA_P(applychain)
+						#clash switch
+						clashed_chain = False
 
-					#Verbose prints
-					if options.verbose:
-						print("Chain %s succesfully assembled to the model. Stored on temp %i" % (chainteracting_id,counter))
+						#Extract the pdb where chain_ob and chainteracting are both toghether
+						pdbname = pdbinteracting
+						pdb_ob = allpdb[pdbname]
+						#chaintomove: chain of the same type than chain_ob in the pdb-file-model 
+						chaintomove = pdb_ob[model_syn][synonim]
+						#aplichain: chain that will be moved to interact with chain_ob
+						applychain = copy.deepcopy(pdb_ob[model_inter][chainteracting_id])
 
-					#Check if limit of subunits has been reached, and end program if so (only when limitant chain option is not activated)
-					if ( options.max_chains != -1) and (counter >= options.max_chains[0]) and options.limitant_chains == "False":
+						#Verbose prints
 						if options.verbose:
-							print("maximum chains limit reached")
-						end_matchprot()
+							stdout.write("Assembling chain %s from pdb %s to chain %s from assembled model." % (chainteracting_id, pdbname, chain_ob_id))
 
-					#Repeat process for appliedchain
-					recursive(chain_ob = applychain, camefrom_pdb = pdbinteracting)
+						#Superimpose
+						supmatrix = superimpose(fix_chain = chain_ob, mov_chain = chaintomove, apply_chain = applychain)
+
+						#Extract chain_applied ordinal (real sequence identifier, for )
+						chain_applied_ordinal = idchainordinal[chainteracting_id]
+
+
+						#Check if appliedchain collides with any of the already moved chains
+						applyatoms = [ atom for atom in applychain.get_atoms() if atom.get_id() == "CA" or atom.get_id() == "P"]
+						for counter in coordsmoved:
+							if clashtest(applyatoms, coordsmoved[counter]):
+								clashed_chain = True
+								#verbose print
+								if options.verbose:
+									print("Interacting chain ", chainteracting_id, " Skipped. Space already filled ")
+								break
+
+						#Check if applied chain has clashed with any of the already-moved chains. If so, reverse chain to original position and skip
+						if clashed_chain == True:
+							continue
+
+						#If unique option is activated use chain is as keys, else use ordinals-sequence
+						if options.unique:
+							mykey = chainteracting_id
+						else: 
+							mykey = chain_applied_ordinal
+
+						#Add one to chain limit if the ordinal of interacting chain corresponds to the limitant ordinal. Skip chain if limit is reached
+						if (options.limitant_chains != "False") and (mykey in limitant_ordinals.keys()):
+							limitant_ordinals[mykey][0] += 1
+							if limitant_ordinals[mykey][0] > limitant_ordinals[mykey][1]:
+								continue
+
+						#Add one to the superimpositions counter
+						counter = counter + 1
+
+						#Save appliedchain (the moved one) in a new pdb
+						tempname =  set_temp_name(counter)
+						savepdb(applychain, tempname)
+
+						#Add applied atom coordenate list to coresponding list of already-moved chains
+						coordsmoved[counter] = get_chain_coords_CA_P(applychain)
+
+						#Verbose prints
+						if options.verbose:
+							print("Chain %s succesfully assembled to the model. Stored on temp %i" % (chainteracting_id,counter))
+
+						#Check if limit of subunits has been reached, and end program if so (only when limitant chain option is not activated)
+						if ( options.max_chains != -1) and (counter >= options.max_chains[0]) and options.limitant_chains == "False":
+							if options.verbose:
+								print("maximum chains limit reached")
+							end_matchprot()
+
+						#Repeat process for appliedchain
+						recursive(chain_ob = applychain, camefrom_pdb = pdbinteracting)
 
 #########
 ##Options
@@ -339,7 +346,8 @@ Dictionary, list and other variables index:
 
 	4. chainsbyfilebymodel: 
 		keys: input pdb filenames
-		values: list of chain-objects in pdb file
+			keys: model ids of each pdbfile
+			values: list of chain-objects in model of pdb file
 
 	5. originalseqs: dictionary
 		keys: all different-sequence chain objects from the model
@@ -348,13 +356,14 @@ Dictionary, list and other variables index:
 	5. synonim_chains: 
 		keys: all ordinals
 			keys: chain identifiers with same ordinal (same sequence)
-				values: pdb files names where this second chain is found
+				keys: pdb files names where this chain is found
+					values: list of models from the pdbfiles where chains are found
 
 	7. idchainordinal: similar to original seqs. Dictionary: 
 		keys: all chain identifiers in the model
 		values: the corresponding ordinal sequence identifier
 
-	7. coordsmoved: set with the coordinates of all chains already saved 
+	7. coordsmoved: set with the Calpha or P coordinates of all chains already saved 
 
 	8. limitant_ordinals: dictinoary. Empty if limitant chains option is not activated
 		keys: all ordinals for chains stated in limitant_chains option
@@ -382,7 +391,7 @@ for pdb in allpdb:
 ##Create synonim_chains, originalseqs and idchainordinal dictionaries
 ######################################################################
 
-originalchains = dict()
+originalseqs = dict()
 synonim_chains = dict()
 idchainordinal = dict()
 countordinals = 1
@@ -399,9 +408,9 @@ for pdbfile in chainsbyfilebymodel:
 			testingchainid = testingchain.get_id()
 
 			#Compare with the original-chains dictionary, and classify the testingchainid with the corresponding ordinal
-			for chain in originalchains:
+			for chain in originalseqs:
 				if comparechains(testingchain,chain):
-					ordinal = originalchains[chain]
+					ordinal = originalseqs[chain]
 
 					#If its a new synonim
 					if testingchainid in synonim_chains[ordinal].keys():
@@ -422,7 +431,7 @@ for pdbfile in chainsbyfilebymodel:
 			#If this sequence hasn't a ordinal yet, create it and add present chain, pdb, model and so
 			else:
 				ordinal = str(countordinals) + "th"
-				originalchains[testingchain] = ordinal
+				originalseqs[testingchain] = ordinal
 				synonim_chains[ordinal] = dict()
 
 				if testingchainid in synonim_chains[ordinal].keys():
@@ -459,7 +468,7 @@ print("allpdb: ",allpdb)
 print("chainsbyfilebymodel: ",chainsbyfilebymodel)
 print("coordsmoved: ",coordsmoved)
 print("synonim_chains: ",synonim_chains)
-print("original chains: ",originalchains)
+print("original chains: ",originalseqs)
 print("idchainordinal :",idchainordinal)
 print("limitant ordinals :",limitant_ordinals)
 
