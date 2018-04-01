@@ -1,1 +1,1 @@
-pyinstaller -D -F --clean  -n protein_assembler --add-data "protein_assembler_main.py:protein_assembler_main.py" -c ./ourGUI.py
+pyinstaller -D -F --clean  -n protein_assembler  -c ./protein_assembler_code.py
