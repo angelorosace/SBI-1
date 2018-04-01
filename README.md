@@ -1,34 +1,26 @@
-#Matchprot
+#Protein assembler
+Proteins are not isolated on the cell. They interact with each other.
+Some of this interactions are obligated, and result in two or more peptide chains forming an oligomer or **protein complex**.
 
-1. Carregar pdbs utilitzant BioPython(INPUT):
-1.1 Globina
-1.2 Tubulina
-1.3 Proteosoma
-1.4 Capsida virica
+The objective of protein assembler is to use individual, obligated interactions between different subunits to assemble the whole protein complex. 
 
-More ex:
-Ribosome (4V4A)
-Proteasome (1G65)
-ATP-Sinthase (5DN6)
-Phosphate dehydratase (2F1D)
-Nucleosome (3KUY)
+##Installation
 
+First download a zipped clone from git repository, either by browser or command line:
 
-2. Comparar noms (o seqüències) per veure quins parells d'interaccions tenim
+```
+$ wget https://github.com/comradeameba/SBI/archive/master.zip
+```
 
-3. Superposició pdbs
+Uncompress the zip clone:
 
-4. Comprobar quantes interaccions queden disponibles al iniciar cada iteració
+```
+unzip master.zip
+```
 
-5. Tenir en compte que dues subunitats poden interaccionar entre elles per diferents llocs
+Once uncompressed, from you current directory:
 
-4. Si tenim (A-B)n 
+1. **Comand line version**: Just add SBI-master/bin directory to your path. Alternatively, you can copy the binary file inside bin to your path folder.
+2. **Graphical version**: No need to install. To start the graphical interface, just make double-click on bin/protein_assemblerGUI binary.
 
-
-
-Tutorial (theory, examples, example analysis)
-
-
-- Coses a preguntar:
-	- Sabem quina subunitat és quina de cada un dels fitxers, és a dir quines es troben repetides per saber el total d'interaccions de cada monòmer?
-	- Superposició amb stam o llibreria Python
+##Usage
