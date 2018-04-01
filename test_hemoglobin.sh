@@ -1,1 +1,1 @@
-time python3 matchprot_main.py -t -v -i pdb/hemoglobin/AB.pdb pdb/hemoglobin/BC.pdb -o hemoglobin
+time python3 protein_assembler_main.py -t -v -i pdb/hemoglobin/CB.pdb pdb/hemoglobin/DC.pdb pdb/hemoglobin/CA.pdb  -o hemoglobin
