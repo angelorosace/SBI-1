@@ -5,9 +5,6 @@ Some of this interactions are obligated, and result in two or more peptide chain
 
 The objective of protein assembler is to use individual, obligated interactions between different subunits to assemble the whole protein complex. 
 
-##About this program 
-Protein assembler is an exahustive algorithm 
-
 ## Installation
 
 First download a zipped clone from git repository, either by browser or command line:
@@ -24,15 +21,15 @@ unzip master.zip
 
 Once uncompressed, from you current directory:
 
-1. **Comand line version**: Just add SBI-master/bin directory to your path. Alternatively, you can copy SBI-master/bin/protein_assembler to your path folder.
-2. **Graphical version**: No need to install. Just make double-click on SBI-master/bin/protein_assemblerGUI binary and the program will start.
-3. **From source script**: Just use the script SBI-master/src/protein_assembler.py. It's a little bit faster than the binary, but it has some extra requirements
- + python interpreter (version 3.0 or higher)
- + Biopython python module
- + tkinter python module (for GUI version)
+1. **From binary:** Just add SBI-master/bin directory to your path. Alternatively, you can copy SBI-master/bin/protein_assembler to your path folder.
+2. **From source script:** Just use the script SBI-master/src/protein_assembler.py. It's a little bit faster than the binary, but it has some extra requirements
+  + python interpreter (version 3.0 or higher)
+  + Biopython python module
 
 ## Usage
+
 ###Examples
+
 For begginers:
 ```
 protein_assembler -i pdb/hemoglobin/*
@@ -53,7 +50,7 @@ Professional:
 protein_assembler -i pdb/5ara_atp_syntasa/* -v -d ./results/ -o atp_syntase_example  -m 1 1 8 1 -l H W P T -s pdb/5ara_atp_syntasa/PH.pdb
 ```
 
-###Options:
+### Options:
 
 **-h/--help:** show help message and exit.
 
@@ -74,14 +71,13 @@ protein_assembler -i pdb/5ara_atp_syntasa/* -v -d ./results/ -o atp_syntase_exam
 1. As a single integer, --max_chains is the maximum number allowed of subunits for this protein complex. The program will stop when the limit is reached.
 2. As a list of integers, --max_chains are the limits for the subunits specified in -l option (see atp syntase example on analysis_examples file  for more information about this option).
 
-**-l/--limitant_chains: **if -m is a list of integers, -l should contain a list of same length with ids from desired chains. This way, the maximum number of each one of this chains is limited by the corresponding integer in -m option. If a chain has different ids on different pdbs, just put one of them (the program will apply the limit to all chains with same sequence). Usefull for assymetrical structues (see atp syntase example on analysis_examples file for more information about this option).
+**-l/--limitant_chains:** if -m is a list of integers, -l should contain a list of same length with ids from desired chains. This way, the maximum number of each one of this chains is limited by the corresponding integer in -m option. If a chain has different ids on different pdbs, just put one of them (the program will apply the limit to all chains with same sequence). Usefull for assymetrical structues (see atp syntase example on analysis_examples file for more information about this option).
 
-**-u/--unique_ids**: If this option is activated, all input chains with different chain ids will be treated as different subunits, regardless of the sequence composition (virus example on analysis_examples file for more information about this option).
+**-u/--unique_ids:** If this option is activated, all input chains with different chain ids will be treated as different subunits, regardless of the sequence composition (virus example on analysis_examples file for more information about this option).
 
-**-f/--limitant_chains_multiplier: **Multiply all the max_chains integers by an integer. Usefull for large, repetitive structures, like microtubules.
+**-f/--limitant_chains_multiplier:** Multiply all the max_chains integers by an integer. Usefull for large, repetitive structures, like microtubules.
   
- ##Citations
+## Citation
 
   + **Biopython module:** Cock PA, Antao T, Chang JT, Chapman BA, Cox CJ, Dalke A, Friedberg I, Hamelryck T, Kauff F, Wilczynski B and de Hoon MJL (2009) Biopython: freely available Python tools for computational molecular biology and bioinformatics. Bioinformatics, 25, 1422-1423
-  + **Tkinter module:** John W. Shipman (2013). Tkinter 8.5 reference: a GUI for Python. http://infohost.nmt.edu/tcc/help/pubs/tkinter/web/index.html
 
